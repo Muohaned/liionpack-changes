@@ -45,5 +45,6 @@ from .solvers import RayManager
 from .solvers import GenericActor
 from .solvers import RayActor
 from .solvers import my_cco
+from .solvers import my_cco2
 
 from ._version import __version__
