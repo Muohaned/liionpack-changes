@@ -2,6 +2,44 @@ import pybamm
 import liionpack as lp
 
 
+def basic_simulation2(parameter_values=None):
+    """
+    Create a Basic PyBaMM simulation set up for integration with liionpack
+
+    Args:
+        parameter_values (pybamm.ParameterValues):
+            The default is None.
+
+    Returns:
+        sim (pybamm.Simulation):
+            A simulation that can be solved individually or passed into the
+            liionpack solve method
+
+    """
+    # Create the pybamm model
+    model = pybamm.lithium_ion.SPM()
+
+    # Add events to the model
+    model = lp.add_events_to_model(model)
+
+    # Set up parameter values
+    if parameter_values is None:
+        param = pybamm.ParameterValues("Chen2020")
+    else:
+        param = parameter_values.copy()
+
+    # Set up solver and simulation
+    solver = pybamm.CasadiSolver(mode="safe")
+    sim = pybamm.Simulation(
+        model=model,
+        parameter_values=param,
+        var_pts=var_pts,
+        solver=solver,
+    )
+    sim.aged_cell_index = aged_cell_index
+    return sim
+
+
 def basic_simulation(parameter_values=None):
     """
     Create a Basic PyBaMM simulation set up for integration with liionpack
