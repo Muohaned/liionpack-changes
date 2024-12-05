@@ -14,6 +14,99 @@ from tqdm import tqdm
 import pybamm
 import casadi
 
+def my_cco2(inputs, sim, dt, Nspm, nproc, variable_names, mapped):
+    print("I am the modified cco function")
+    solver = sim.solver
+    aged_cell_index = sim.aged_cell_index
+    sim.build()
+    initial_solutions = []
+    model = sim.built_model
+
+    y0_total_size = (
+        model.len_rhs + model.len_alg + getattr(model, 'len_alg_sens', 0)
+    )
+    y_zero = np.zeros((y0_total_size, 1))
+
+    for k, inpt in enumerate(inputs):
+        inputs_casadi = casadi.vertcat(*[x for x in inpt.values()])
+        if k == aged_cell_index:
+            init_sol = sim.step(
+                dt=1e-6, save=False, starting_solution=aging_sol_last, inputs=inpt
+            ).last_state
+        else:
+            init_sol = sim.step(
+                dt=1e-6, save=False, starting_solution=None, inputs=inpt
+            ).last_state
+        
+        initial_solutions.append(init_sol.copy())
+        _init = model.initial_conditions_eval(0, y_zero, inputs_casadi)
+        initial_solutions[-1].y[:] = _init
+
+ # Step model forward dt seconds
+    t_eval = np.linspace(0, dt, 11)
+
+    # No external variables - Temperature solved as lumped model in pybamm
+    # External variables could (and should) be used if battery thermal problem
+    # Includes conduction with any other circuits or neighboring batteries
+    # inp_and_ext.update(external_variables)
+    inp_and_ext = inputs
+
+    # Code to create mapped integrator
+    integrator = solver.create_integrator(
+        sim.built_model, inputs=inp_and_ext, t_eval=t_eval
+    )
+    if mapped:
+        integrator = integrator.map(Nspm, "thread", nproc)
+    # Get the input parameter order
+    ip_order = inputs[0].keys()
+    # Variables function for parallel evaluation
+    casadi_objs = sim.built_model.export_casadi_objects(
+        variable_names=variable_names, input_parameter_order=ip_order
+    )
+    variables = casadi_objs["variables"]
+    t, x, z, p = (
+        casadi_objs["t"],
+        casadi_objs["x"],
+        casadi_objs["z"],
+        casadi_objs["inputs"],
+    )
+    variables_stacked = casadi.vertcat(*variables.values())
+    variables_fn = casadi.Function("variables", [t, x, z, p], [variables_stacked])
+    if mapped:
+        variables_fn = variables_fn.map(Nspm, "thread", nproc)
+
+    # Look for events in model variables and create a function to evaluate them
+    all_vars = sorted(sim.model.variables.keys())
+    event_vars = [v for v in all_vars if "Event" in v]
+    if len(event_vars) > 0:
+        # Variables function for parallel evaluation
+        casadi_objs = sim.built_model.export_casadi_objects(
+            variable_names=event_vars, input_parameter_order=ip_order
+        )
+        events = casadi_objs["variables"]
+        t, x, z, p = (
+            casadi_objs["t"],
+            casadi_objs["x"],
+            casadi_objs["z"],
+            casadi_objs["inputs"],
+        )
+        events_stacked = casadi.vertcat(*events.values())
+        events_fn = casadi.Function("variables", [t, x, z, p], [events_stacked])
+        if mapped:
+            events_fn = events_fn.map(Nspm, "thread", nproc)
+    else:
+        events_fn = None
+
+    output = {
+        "integrator": integrator,
+        "variables_fn": variables_fn,
+        "t_eval": t_eval,
+        "event_names": event_vars,
+        "events_fn": events_fn,
+        "initial_solutions": initial_solutions,
+    }
+    return output
+
 def my_cco(inputs, sim, dt, Nspm, nproc, variable_names, mapped):
     """
     Internal function to produce the casadi objects in their mapped form for
