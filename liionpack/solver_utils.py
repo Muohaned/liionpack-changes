@@ -52,7 +52,7 @@ def _serial_eval(model, solutions, inputs_dict, variables, t_eval):
     return casadi.horzcat(*var_eval)
 
 
-def _serial_step(model, solutions, inputs_dict, integrator, variables, t_eval, events, aged_cell_index=None, aging_sol_last=None):    
+def _serial_step(model, solutions, inputs_dict, integrator, variables, t_eval, events):
     """
     Internal function to process the model for one timestep in a serial way.
 
@@ -88,18 +88,15 @@ def _serial_step(model, solutions, inputs_dict, integrator, variables, t_eval, e
     sol = []
     var_eval = []
     events_eval = []
-for k in range(N): #here MYK changes
-        if k == aged_cell_index and aging_sol_last is not None:
-            # Use aged solution for this cell
-            x0 = aging_sol_last.y[:len_rhs, -1]
-            z0 = aging_sol_last.y[len_rhs:, -1]
-        elif solutions[k] is None:
+    for k in range(N):
+        if solutions[k] is None:
             # First pass
             x0 = model.y0[:len_rhs]
             z0 = model.y0[len_rhs:]
         else:
             x0 = solutions[k].y[:len_rhs, -1]
-            z0 = solutions[k].y[len_rhs:, -1]        temp = inputs_dict[k]
+            z0 = solutions[k].y[len_rhs:, -1]
+        temp = inputs_dict[k]
         inputs = casadi.vertcat(*[x for x in temp.values()] + [t_min])
         ninputs = len(temp.values())
         # Call the integrator once, with the grid
@@ -164,8 +161,7 @@ def _mapped_eval(model, solutions, inputs_dict, variables, t_eval):
     return var_eval
 
 
-def _mapped_step(model, solutions, inputs_dict, integrator, variables, t_eval, events, aged_cell_index=None, aging_sol_last=None):
-    
+def _mapped_step(model, solutions, inputs_dict, integrator, variables, t_eval, events):
     """
     Internal function to process the model for one timestep in a mapped way.
     Mapped versions of the integrator and variables functions should already
@@ -198,13 +194,13 @@ def _mapped_step(model, solutions, inputs_dict, integrator, variables, t_eval, e
     """
     len_rhs = model.concatenated_rhs.size
     N = len(solutions)
-     if solutions[0] is None: #MYK changes
+    if solutions[0] is None:
         # First pass
-        x0 = casadi.horzcat(*[model.y0[:len_rhs] if i != aged_cell_index else aging_sol_last.y[:len_rhs, -1] for i in range(N)])
-        z0 = casadi.horzcat(*[model.y0[len_rhs:] if i != aged_cell_index else aging_sol_last.y[len_rhs:, -1] for i in range(N)])
+        x0 = casadi.horzcat(*[model.y0[:len_rhs] for i in range(N)])
+        z0 = casadi.horzcat(*[model.y0[len_rhs:] for i in range(N)])
     else:
-        x0 = casadi.horzcat(*[sol.y[:len_rhs, -1] if i != aged_cell_index else aging_sol_last.y[:len_rhs, -1] for i, sol in enumerate(solutions)])
-        z0 = casadi.horzcat(*[sol.y[len_rhs:, -1] if i != aged_cell_index else aging_sol_last.y[len_rhs:, -1] for i, sol in enumerate(solutions)])
+        x0 = casadi.horzcat(*[sol.y[:len_rhs, -1] for sol in solutions])
+        z0 = casadi.horzcat(*[sol.y[len_rhs:, -1] for sol in solutions])
     # t_min = [0.0]*N
     t_min = 0.0
     inputs = []
